@@ -60,6 +60,68 @@ public class Analysis extends ForwardFlowAnalysis {
 		}
 	}
 	
+	private Set<String> functionCall(InvokeExpr ie, Map<String, Set<String>> output) {
+		Set<String> ret = new HashSet<String>();
+		if (ie.getMethod().toString().equals("<benchmark.internal.Benchmark: void alloc(int)>")) {
+			allocId = ((IntConstant)ie.getArgs().get(0)).value;
+		}
+		else if (ie.getMethod().toString().equals("<benchmark.internal.Benchmark: void test(int,java.lang.Object)>")) {
+			int id = ((IntConstant)ie.getArgs().get(0)).value;
+			Value v = ie.getArgs().get(1);
+			queries.put(Integer.toString(id), methodName + "." + v.toString());
+		}
+		else {
+			SootMethod sm = ie.getMethod();
+			if(!funcstk.contains(sm.toString())) {
+				Map<String, Set<String>> init = new HashMap<String, Set<String>>();
+				for(int i = 0; i < ie.getArgCount(); i++) {
+					String initkey = sm.toString() + ".@." + Integer.toString(i);
+					Set<String> initval = new HashSet<String>();
+					initval.addAll(output.get(methodName + "." + ie.getArgs().get(i).toString()));
+					init.put(initkey, initval);
+				}
+				if(ie instanceof InstanceInvokeExpr) {
+					String thisobjkey = sm.toString() + ".@.this";
+					Set<String> thisobjval = new HashSet<String>();
+					thisobjval.addAll(output.get(methodName + "." + ((InstanceInvokeExpr)ie).getBase().toString()));
+					init.put(thisobjkey, thisobjval);
+				}
+				for(Map.Entry<String, Set<String>> entry : output.entrySet()) {
+					if(entry.getKey().startsWith("#.")) {
+						init.put(entry.getKey(), entry.getValue());
+					}
+				}
+
+				funcstk.push(sm.toString());
+				Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), init, sm.toString(), funcstk);
+				funcstk.pop();
+				
+				if(pa.paraMap.containsKey(sm.toString() + ".@.return")) {
+					ret.addAll(pa.result.get(pa.paraMap.get(sm.toString() + ".@.return")));
+				}
+				queries.putAll(pa.queries);
+				for (Map.Entry<String, Set<String>> entry : pa.result.entrySet()) {
+					if(entry.getKey().startsWith("#.") || queries.containsValue(entry.getKey())) {
+						output.put(entry.getKey(), entry.getValue());
+					}
+				}
+				for(int i = 0; i < ie.getArgCount(); i++) {
+					String parakey = sm.toString() + ".@." + Integer.toString(i);
+					String paraval = pa.paraMap.get(parakey);
+					output.get(methodName + "." + ie.getArgs().get(i).toString()).addAll(pa.result.get(paraval));
+				}
+				if(ie instanceof InstanceInvokeExpr) {
+					output.get(methodName + "." + ((InstanceInvokeExpr)ie).getBase().toString())
+						  .addAll(pa.result.get(pa.paraMap.get(sm.toString() + ".@.this")));
+				}
+			}
+			else {
+				//stop, ignore.
+			}
+		}
+		return ret;
+	}
+	
 	protected void flowThrough(Object src, Object unit, Object dest) {
 		Map<String, Set<String>> input = (Map<String, Set<String>>)src;
 		Map<String, Set<String>> output = (Map<String, Set<String>>)dest;
@@ -68,61 +130,7 @@ public class Analysis extends ForwardFlowAnalysis {
 		Unit u = (Unit)unit;
 		if(u instanceof InvokeStmt) {
 			InvokeExpr ie = ((InvokeStmt) u).getInvokeExpr();
-			if (ie.getMethod().toString().equals("<benchmark.internal.Benchmark: void alloc(int)>")) {
-				allocId = ((IntConstant)ie.getArgs().get(0)).value;
-			}
-			else if (ie.getMethod().toString().equals("<benchmark.internal.Benchmark: void test(int,java.lang.Object)>")) {
-				int id = ((IntConstant)ie.getArgs().get(0)).value;
-				Value v = ie.getArgs().get(1);
-				queries.put(Integer.toString(id), methodName + "." + v.toString());
-			}
-			else {
-				SootMethod sm = ie.getMethod();
-				if(!funcstk.contains(sm.toString())) {
-					Map<String, Set<String>> init = new HashMap<String, Set<String>>();
-					for(int i = 0; i < ie.getArgCount(); i++) {
-						String initkey = sm.toString() + ".@." + Integer.toString(i);
-						Set<String> initval = new HashSet<String>();
-						initval.addAll(output.get(methodName + "." + ie.getArgs().get(i).toString()));
-						init.put(initkey, initval);
-					}
-					if(ie instanceof SpecialInvokeExpr) {
-						String thisobjkey = sm.toString() + ".@.this";
-						Set<String> thisobjval = new HashSet<String>();
-						thisobjval.addAll(output.get(methodName + "." + ((SpecialInvokeExpr)ie).getBase().toString()));
-						init.put(thisobjkey, thisobjval);
-					}
-					for(Map.Entry<String, Set<String>> entry : output.entrySet()) {
-						if(entry.getKey().startsWith("#.")) {
-							init.put(entry.getKey(), entry.getValue());
-						}
-					}
-
-					funcstk.push(sm.toString());
-					Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), init, sm.toString(), funcstk);
-					funcstk.pop();
-					
-					queries.putAll(pa.queries);
-					
-					for (Map.Entry<String, Set<String>> entry : pa.result.entrySet()) {
-						if(entry.getKey().startsWith("#.") || queries.containsValue(entry.getKey())) {
-							output.put(entry.getKey(), entry.getValue());
-						}
-					}
-					for(int i = 0; i < ie.getArgCount(); i++) {
-						String parakey = sm.toString() + ".@." + Integer.toString(i);
-						String paraval = pa.paraMap.get(parakey);
-						output.get(methodName + "." + ie.getArgs().get(i).toString()).addAll(pa.result.get(paraval));
-					}
-					if(ie instanceof SpecialInvokeExpr) {
-						output.get(methodName + "." + ((SpecialInvokeExpr)ie).getBase().toString())
-							  .addAll(pa.result.get(pa.paraMap.get(sm.toString() + ".@.this")));
-					}
-				}
-				else {
-					//stop, ignore.
-				}
-			}
+			functionCall(ie, output);
 		}
 		else if(u instanceof DefinitionStmt) {
 			Value left = ((DefinitionStmt)u).getLeftOp();
@@ -155,6 +163,9 @@ public class Analysis extends ForwardFlowAnalysis {
 					}
 				}
 			}
+			else if(right instanceof InvokeExpr) {
+				rightSet = functionCall((InvokeExpr)right, output);
+			}
 			
 			if(left instanceof Local) {
 				if(!output.containsKey(methodName + "." + left.toString())) {
@@ -172,6 +183,9 @@ public class Analysis extends ForwardFlowAnalysis {
 					output.get("#." + entry + "." + field).addAll(rightSet);
 				}
 			}
+		}
+		else if(u instanceof ReturnStmt) {
+			paraMap.put(methodName + ".@.return", methodName + "." + ((ReturnStmt)u).getOp().toString());
 		}
 		result = output;
 	}
