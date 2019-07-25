@@ -9,17 +9,21 @@ import soot.toolkits.graph.ExceptionalUnitGraph;
 class WholeProgramTransformer extends SceneTransformer {
 	@Override
 	protected void internalTransform(String arg0, Map<String, String> arg1) {
-		
-		SootMethod sm = Scene.v().getMainMethod();
-		Stack<String> stk = new Stack<String>();
-		stk.push(sm.toString());
-		Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), new HashMap<String, Set<String>>(), sm.toString(), stk);
-		stk.pop();
-		
-		String res = pa.getResult();
-		System.out.print(res);
-		AnswerPrinter.printAnswer(res);
-		
+		try {
+			SootMethod sm = Scene.v().getMainMethod();
+			Stack<String> stk = new Stack<String>();
+			stk.push(sm.toString());
+			Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), new HashMap<String, Set<String>>(), sm.toString(), stk);
+			stk.pop();
+			
+			String res = pa.getResult();
+			System.out.print(res);
+			AnswerPrinter.printAnswer(res);
+		}
+		catch(Exception e) {
+//			e.printStackTrace();
+			System.out.println("Cannot Do Analysis");
+		}
 	}
 }
 
