@@ -9,10 +9,12 @@ import soot.toolkits.scalar.ForwardFlowAnalysis;
 
 public class Analysis extends ForwardFlowAnalysis {
 	int allocId;
-	String methodName;
-	Map<String, String> queries, paraMap;
-	Map<String, Set<String>> result, initset;
-	Stack<String> funcstk;
+	String methodName; //Current function name
+	Map<String, String> queries; //Store Benchmark.test in current function
+	Map<String, String> paraMap; //Map the parameters to the local variable
+	Map<String, Set<String>> result; //Store the result of analysis
+	Map<String, Set<String>> initset; //Pass the parameter results, heap references results to the called function  
+	Stack<String> funcstk; //Store function call trace, avoid recursive function call
 	
 	public Analysis(DirectedGraph g, Map<String, Set<String>> init, String method, Stack<String> stk){
 		super(g);
@@ -60,20 +62,26 @@ public class Analysis extends ForwardFlowAnalysis {
 		}
 	}
 	
+	//Deal with all InvokeStmt Or InvokeExpr
 	private Set<String> functionCall(InvokeExpr ie, Map<String, Set<String>> output) throws Exception {
 		Set<String> ret = new HashSet<String>();
+		//Get alloc location
 		if (ie.getMethod().toString().equals("<benchmark.internal.Benchmark: void alloc(int)>")) {
 			allocId = ((IntConstant)ie.getArgs().get(0)).value;
 		}
+		//Store queries
 		else if (ie.getMethod().toString().equals("<benchmark.internal.Benchmark: void test(int,java.lang.Object)>")) {
 			int id = ((IntConstant)ie.getArgs().get(0)).value;
 			Value v = ie.getArgs().get(1);
 			queries.put(Integer.toString(id), methodName + "." + v.toString());
 		}
+		//Deal with InvokeExpr
 		else {
 			SootMethod sm = ie.getMethod();
 			if(!funcstk.contains(sm.toString()) && !sm.getDeclaringClass().isJavaLibraryClass()) {
+				//Make init set which will be passed to the called function
 				Map<String, Set<String>> init = new HashMap<String, Set<String>>();
+				//Put parameter result into init set
 				for(int i = 0; i < ie.getArgCount(); i++) {
 					if(ie.getArgs().get(i) instanceof Local) {
 						String initkey = sm.toString() + ".@." + Integer.toString(i);
@@ -82,32 +90,40 @@ public class Analysis extends ForwardFlowAnalysis {
 						init.put(initkey, initval);						
 					}
 				}
+				//Put this parameter result into init set
 				if(ie instanceof InstanceInvokeExpr) {
 					String thisobjkey = sm.toString() + ".@.this";
 					Set<String> thisobjval = new HashSet<String>();
 					thisobjval.addAll(output.get(methodName + "." + ((InstanceInvokeExpr)ie).getBase().toString()));
 					init.put(thisobjkey, thisobjval);
 				}
+				//Put heap references result into init set
 				for(Map.Entry<String, Set<String>> entry : output.entrySet()) {
 					if(entry.getKey().startsWith("#.")) {
 						init.put(entry.getKey(), entry.getValue());
 					}
 				}
 				
+				//Push into stack and begin a new Analysis
 				funcstk.push(sm.toString());
 				Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), init, sm.toString(), funcstk);
 				funcstk.pop();
-//				System.out.println("end : " + sm.toString());
 				
+				printer2(pa.result);
+				
+				//Fetch return value 
 				if(pa.result.containsKey(sm.toString() + ".@.return")) {
 					ret.addAll(pa.result.get(sm.toString() + ".@.return"));
 				}
+				//Merge all queries into current queries
 				queries.putAll(pa.queries);
+				//Merge some useful result into current result
 				for (Map.Entry<String, Set<String>> entry : pa.result.entrySet()) {
 					if(entry.getKey().startsWith("#.") || queries.containsValue(entry.getKey()) || entry.getKey().contains(".@.return")) {
 						output.put(entry.getKey(), entry.getValue());
 					}
 				}
+				//Merge parameter result into current result
 				for(int i = 0; i < ie.getArgCount(); i++) {
 					if(ie.getArgs().get(i) instanceof Local) {
 						String parakey = sm.toString() + ".@." + Integer.toString(i);
@@ -115,6 +131,7 @@ public class Analysis extends ForwardFlowAnalysis {
 						output.get(methodName + "." + ie.getArgs().get(i).toString()).addAll(pa.result.get(paraval));						
 					}
 				}
+				//Merge this parameter result into current result
 				if(ie instanceof InstanceInvokeExpr) {
 					output.get(methodName + "." + ((InstanceInvokeExpr)ie).getBase().toString())
 						  .addAll(pa.result.get(pa.paraMap.get(sm.toString() + ".@.this")));
@@ -140,6 +157,7 @@ public class Analysis extends ForwardFlowAnalysis {
 				Value right = ((DefinitionStmt)u).getRightOp();
 				Set<String> rightSet = new HashSet<String>();
 				
+				//Deal with right operator
 				if (right instanceof ParameterRef) {
 					String pidx = Integer.toString(((ParameterRef)right).getIndex());
 					paraMap.put(methodName + ".@." + pidx, methodName + "." + left.toString());
@@ -170,6 +188,7 @@ public class Analysis extends ForwardFlowAnalysis {
 					rightSet = functionCall((InvokeExpr)right, output);
 				}
 				
+				//Deal with left operator
 				if(left instanceof Local) {
 					if(!output.containsKey(methodName + "." + left.toString())) {
 						output.put(methodName + "." + left.toString(), new HashSet<String>());
@@ -188,12 +207,7 @@ public class Analysis extends ForwardFlowAnalysis {
 				}
 			}
 			else if(u instanceof ReturnStmt) {
-//				Map<String, Set<String>> tmp = new HashMap<String, Set<String>>();
-//				merge(result, output, tmp);
-//				output = tmp;
-				
 				if(((ReturnStmt)u).getOp() instanceof Local) {
-//					System.out.println(u.toString());
 					Set<String> retval = output.get(methodName + "." + ((ReturnStmt)u).getOp().toString());
 					if(!output.containsKey(methodName + ".@.return")) {
 						output.put(methodName + ".@.return", new HashSet<String>());
@@ -201,19 +215,13 @@ public class Analysis extends ForwardFlowAnalysis {
 					output.get(methodName + ".@.return").addAll(retval);	
 				}
 			}
-//			else if(u instanceof ReturnVoidStmt) {
-//				Map<String, Set<String>> tmp = new HashMap<String, Set<String>>();
-//				merge(result, output, tmp);
-//				output = tmp;
-//			}
-//			result = output;
 			Map<String, Set<String>> temp = new HashMap<String, Set<String>>();
 			merge(result, output, temp);
 			result = temp;
 		}
 		catch(Exception e) {
 //			e.printStackTrace();
-			System.out.println("Cannot Do Analysis");
+//			System.out.println("Cannot Do Analysis");
 		}
 	}
 	

@@ -22,7 +22,7 @@ class WholeProgramTransformer extends SceneTransformer {
 		}
 		catch(Exception e) {
 //			e.printStackTrace();
-			System.out.println("Cannot Do Analysis");
+//			System.out.println("Cannot Do Analysis");
 		}
 	}
 }
