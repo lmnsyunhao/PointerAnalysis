@@ -7,6 +7,7 @@ import soot.jimple.*;
 import soot.toolkits.graph.*;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
 
+@SuppressWarnings({ "rawtypes", "unchecked" })
 public class Analysis extends ForwardFlowAnalysis {
 	int allocId;
 	String methodName; //Current function name
@@ -109,8 +110,6 @@ public class Analysis extends ForwardFlowAnalysis {
 				Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), init, sm.toString(), funcstk);
 				funcstk.pop();
 				
-				printer2(pa.result);
-				
 				//Fetch return value 
 				if(pa.result.containsKey(sm.toString() + ".@.return")) {
 					ret.addAll(pa.result.get(sm.toString() + ".@.return"));
@@ -120,7 +119,12 @@ public class Analysis extends ForwardFlowAnalysis {
 				//Merge some useful result into current result
 				for (Map.Entry<String, Set<String>> entry : pa.result.entrySet()) {
 					if(entry.getKey().startsWith("#.") || queries.containsValue(entry.getKey()) || entry.getKey().contains(".@.return")) {
-						output.put(entry.getKey(), entry.getValue());
+						if(output.containsKey(entry.getKey())) {
+							output.get(entry.getKey()).addAll(entry.getValue());
+						}
+						else {
+							output.put(entry.getKey(), entry.getValue());
+						}
 					}
 				}
 				//Merge parameter result into current result
