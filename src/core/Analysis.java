@@ -10,6 +10,7 @@ import soot.toolkits.scalar.ForwardFlowAnalysis;
 @SuppressWarnings({ "rawtypes", "unchecked" })
 public class Analysis extends ForwardFlowAnalysis {
 	int allocId;
+	int hiddenId;
 	String methodName; //Current function name
 	Map<String, String> queries; //Store Benchmark.test in current function
 	Map<String, String> paraMap; //Map the parameters to the local variable
@@ -17,10 +18,11 @@ public class Analysis extends ForwardFlowAnalysis {
 	Map<String, Set<String>> initset; //Pass the parameter results, heap references results to the called function  
 	Stack<String> funcstk; //Store function call trace, avoid recursive function call
 	
-	public Analysis(DirectedGraph g, Map<String, Set<String>> init, String method, Stack<String> stk){
+	public Analysis(DirectedGraph g, Map<String, Set<String>> init, String method, Stack<String> stk, int startHiddenId){
 		super(g);
 		
-		allocId = 0;
+		allocId = -1;
+		hiddenId = startHiddenId;
 		methodName = method;
 		paraMap = new HashMap<String, String>();
 		queries = new HashMap<String, String>();
@@ -107,8 +109,9 @@ public class Analysis extends ForwardFlowAnalysis {
 				
 				//Push into stack and begin a new Analysis
 				funcstk.push(sm.toString());
-				Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), init, sm.toString(), funcstk);
+				Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), init, sm.toString(), funcstk, hiddenId);
 				funcstk.pop();
+				hiddenId = pa.hiddenId;
 				
 				//Fetch return value 
 				if(pa.result.containsKey(sm.toString() + ".@.return")) {
@@ -174,7 +177,14 @@ public class Analysis extends ForwardFlowAnalysis {
 						rightSet.addAll(output.get(methodName + ".@.this"));
 				}
 				else if (right instanceof NewExpr) {
-					rightSet.add(Integer.toString(allocId));
+					if(allocId == -1) {
+						rightSet.add(Integer.toString(hiddenId));
+						hiddenId--;
+					}
+					else {
+						rightSet.add(Integer.toString(allocId));
+						allocId = -1;
+					}
 				}
 				else if (right instanceof Local) {
 					rightSet.addAll(output.get(methodName + "." + right.toString()));
@@ -245,7 +255,7 @@ public class Analysis extends ForwardFlowAnalysis {
 					list.add(new Integer(s));
 				Collections.sort(list);
 				for (int j = 0; j < list.size(); j++) {
-					if(list.get(j).equals(new Integer(0))) continue;
+					if(list.get(j).intValue() < 0) continue;
 					ret = ret + " " + list.get(j).toString();
 				}
 			}

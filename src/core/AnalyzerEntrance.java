@@ -13,7 +13,7 @@ class WholeProgramTransformer extends SceneTransformer {
 			SootMethod sm = Scene.v().getMainMethod();
 			Stack<String> stk = new Stack<String>();
 			stk.push(sm.toString());
-			Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), new HashMap<String, Set<String>>(), sm.toString(), stk);
+			Analysis pa = new Analysis(new ExceptionalUnitGraph(sm.retrieveActiveBody()), new HashMap<String, Set<String>>(), sm.toString(), stk, -1);
 			stk.pop();
 			
 			String res = pa.getResult();

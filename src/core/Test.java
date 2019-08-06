@@ -5,8 +5,8 @@ public class Test {
 	public static void main(String[] args) {
 		AnalyzerEntrance.main(new String[]{
 			CODE_PATH,
-			"test.Hello" //Accurate
-//			"test.FieldSensitivity" //Accurate
+//			"test.Hello" //Accurate
+			"test.FieldSensitivity" //Accurate
 		});
 	}
 }
